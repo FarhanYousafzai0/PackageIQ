@@ -45,24 +45,144 @@ const githubClient = axios.create({
   },
 });
 
+const PACKAGE_NOT_FOUND = 'PACKAGE_NOT_FOUND';
+const PACKAGE_LOOKUP_FAILED = 'PACKAGE_LOOKUP_FAILED';
+
+const createPackageError = (code, packageName, message) =>
+  Object.assign(new Error(message), { code, packageName });
+
+const normalizePackageName = (packageName = '') => packageName.trim().toLowerCase();
+
+const isNotFoundError = (error) =>
+  axios.isAxiosError(error) && error.response?.status === 404;
+
+const isValidNpmPackagePayload = (data, packageName) => {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  if (typeof data.error === 'string') return false;
+  if (!data.name || typeof data.name !== 'string') return false;
+
+  const normalizedRequested = normalizePackageName(packageName);
+  const normalizedPayload = normalizePackageName(data.name);
+
+  if (normalizedPayload !== normalizedRequested) return false;
+
+  return !!data.versions || !!data['dist-tags'];
+};
+
+const isProxyNotFoundPayload = (data) =>
+  !!data &&
+  typeof data === 'object' &&
+  !Array.isArray(data) &&
+  (data.status === 404 || typeof data.error === 'string');
+
 /**
  * Fetch package metadata from npm registry
  * Uses CORS proxy if direct request fails
  * @param {string} packageName - npm package name
  */
 export const fetchNpmPackage = async (packageName) => {
+  const normalizedName = normalizePackageName(packageName);
+  let lookupFailed = false;
+
   try {
-    const response = await npmClient.get(`/${packageName}`);
-    return response.data;
-  } catch (error) {
-    // Try with CORS proxy
-    try {
-      const proxyUrl = `${CORS_PROXY}${encodeURIComponent(`${NPM_REGISTRY_URL}/${packageName}`)}`;
-      const response = await axios.get(proxyUrl, { timeout: 15000 });
+    const response = await npmClient.get(`/${normalizedName}`);
+    if (isValidNpmPackagePayload(response.data, normalizedName)) {
       return response.data;
-    } catch (proxyError) {
-      throw new Error(`Package "${packageName}" not found on npm`);
     }
+    throw createPackageError(
+      PACKAGE_NOT_FOUND,
+      normalizedName,
+      `Package "${normalizedName}" was not found on npm.`
+    );
+  } catch (error) {
+    if (error?.code === PACKAGE_NOT_FOUND) {
+      throw error;
+    }
+
+    if (isNotFoundError(error)) {
+      throw createPackageError(
+        PACKAGE_NOT_FOUND,
+        normalizedName,
+        `Package "${normalizedName}" was not found on npm.`
+      );
+    }
+    lookupFailed = true;
+  }
+
+  try {
+    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(`${NPM_REGISTRY_URL}/${normalizedName}`)}`;
+    const response = await axios.get(proxyUrl, { timeout: 15000 });
+
+    if (isValidNpmPackagePayload(response.data, normalizedName)) {
+      return response.data;
+    }
+
+    if (isProxyNotFoundPayload(response.data)) {
+      throw createPackageError(
+        PACKAGE_NOT_FOUND,
+        normalizedName,
+        `Package "${normalizedName}" was not found on npm.`
+      );
+    }
+
+    throw createPackageError(
+      PACKAGE_NOT_FOUND,
+      normalizedName,
+      `Package "${normalizedName}" was not found on npm.`
+    );
+  } catch (proxyError) {
+    if (proxyError?.code === PACKAGE_NOT_FOUND) {
+      throw proxyError;
+    }
+
+    if (isNotFoundError(proxyError)) {
+      throw createPackageError(
+        PACKAGE_NOT_FOUND,
+        normalizedName,
+        `Package "${normalizedName}" was not found on npm.`
+      );
+    }
+
+    lookupFailed = true;
+  }
+
+  if (lookupFailed) {
+    throw createPackageError(
+      PACKAGE_LOOKUP_FAILED,
+      normalizedName,
+      `We could not load package data for "${normalizedName}". Please try again.`
+    );
+  }
+
+  throw createPackageError(
+    PACKAGE_NOT_FOUND,
+    normalizedName,
+    `Package "${normalizedName}" was not found on npm.`
+  );
+};
+
+const normalizeLookupError = (error, packageName) => {
+  if (error?.code === PACKAGE_NOT_FOUND || error?.code === PACKAGE_LOOKUP_FAILED) {
+    return error;
+  }
+
+  return createPackageError(
+    PACKAGE_LOOKUP_FAILED,
+    normalizePackageName(packageName),
+    `We could not load package data for "${normalizePackageName(packageName)}". Please try again.`
+  );
+};
+
+/**
+ * Fetch package metadata from npm registry
+ * Uses CORS proxy if direct request fails
+ * @param {string} packageName - npm package name
+ */
+export const fetchValidatedNpmPackage = async (packageName) => {
+  try {
+    return await fetchNpmPackage(packageName);
+  } catch (error) {
+    throw normalizeLookupError(error, packageName);
   }
 };
 
@@ -259,74 +379,70 @@ export const checkVulnerabilities = async (packageName, version) => {
  * @param {string} packageName - npm package name
  */
 export const fetchPackageIntelligence = async (packageName) => {
-  const cleanName = packageName.trim().toLowerCase();
-  
-  try {
-    // Fetch npm data
-    const npmData = await fetchNpmPackage(cleanName);
-    const downloads = await fetchNpmDownloads(cleanName);
-    const downloadTrends = await fetchDownloadTrends(cleanName);
-    const bundleSize = await fetchBundleSize(cleanName);
-    
-    // Extract and fetch GitHub data
-    const githubInfo = extractGithubInfo(npmData);
-    let githubData = null;
-    let commitData = null;
-    
-    if (githubInfo) {
-      githubData = await fetchGithubRepo(githubInfo.owner, githubInfo.repo);
-      commitData = await fetchGithubCommits(githubInfo.owner, githubInfo.repo);
-    }
-    
-    // Get latest version
-    const latestVersion = npmData['dist-tags']?.latest || 'unknown';
-    const latestRelease = npmData.versions?.[latestVersion];
-    
-    // Calculate health score
-    const healthScore = calculateHealthScore({
-      downloads: downloads.downloads,
-      hasGithub: !!githubData,
-      stars: githubData?.stars || 0,
-      lastPush: githubData?.lastPush,
-      openIssues: githubData?.openIssues || 0,
-      hasTypes: !!latestRelease?.types || !!npmData.types,
-    });
-    
-    return {
-      name: cleanName,
-      version: latestVersion,
-      description: npmData.description || '',
-      license: npmData.license || 'Unknown',
-      homepage: npmData.homepage || '',
-      keywords: npmData.keywords || [],
-      maintainers: npmData.maintainers?.length || 0,
-      
-      // npm stats
-      downloads: downloads.downloads,
-      downloadTrends,
-      
-      // Bundle size
-      bundleSize,
-      
-      // GitHub stats
-      github: githubData ? {
-        ...githubData,
-        lastCommit: commitData?.lastCommit,
-        lastCommitMessage: commitData?.message,
-        url: `https://github.com/${githubInfo.owner}/${githubInfo.repo}`,
-      } : null,
-      
-      // Health & security
-      healthScore,
-      vulnerabilities: { count: 0 },
-      
-      // Metadata
-      lastPublished: npmData.time?.[latestVersion],
-      created: npmData.time?.created,
-    };
-  } catch (error) {
-    throw error;
+  const cleanName = normalizePackageName(packageName);
+
+  // Fetch npm data
+  const npmData = await fetchValidatedNpmPackage(cleanName);
+  const downloads = await fetchNpmDownloads(cleanName);
+  const downloadTrends = await fetchDownloadTrends(cleanName);
+  const bundleSize = await fetchBundleSize(cleanName);
+
+  // Extract and fetch GitHub data
+  const githubInfo = extractGithubInfo(npmData);
+  let githubData = null;
+  let commitData = null;
+
+  if (githubInfo) {
+    githubData = await fetchGithubRepo(githubInfo.owner, githubInfo.repo);
+    commitData = await fetchGithubCommits(githubInfo.owner, githubInfo.repo);
   }
+
+  // Get latest version
+  const latestVersion = npmData['dist-tags']?.latest || 'unknown';
+  const latestRelease = npmData.versions?.[latestVersion];
+
+  // Calculate health score
+  const healthScore = calculateHealthScore({
+    downloads: downloads.downloads,
+    hasGithub: !!githubData,
+    stars: githubData?.stars || 0,
+    lastPush: githubData?.lastPush,
+    openIssues: githubData?.openIssues || 0,
+    hasTypes: !!latestRelease?.types || !!npmData.types,
+  });
+
+  return {
+    name: cleanName,
+    version: latestVersion,
+    description: npmData.description || '',
+    license: npmData.license || 'Unknown',
+    homepage: npmData.homepage || '',
+    keywords: npmData.keywords || [],
+    maintainers: npmData.maintainers?.length || 0,
+
+    // npm stats
+    downloads: downloads.downloads,
+    downloadTrends,
+
+    // Bundle size
+    bundleSize,
+
+    // GitHub stats
+    github: githubData ? {
+      ...githubData,
+      lastCommit: commitData?.lastCommit,
+      lastCommitMessage: commitData?.message,
+      url: `https://github.com/${githubInfo.owner}/${githubInfo.repo}`,
+    } : null,
+
+    // Health & security
+    healthScore,
+    vulnerabilities: { count: 0 },
+
+    // Metadata
+    lastPublished: npmData.time?.[latestVersion],
+    created: npmData.time?.created,
+  };
 };
 
 /**

@@ -6,6 +6,16 @@ import HealthScore from '../components/packageiq/HealthScore';
 import DownloadChart from '../components/packageiq/DownloadChart';
 import BundleSizeDisplay from '../components/packageiq/BundleSize';
 import AIVerdict from '../components/packageiq/AIVerdict';
+import NavigationBar from '../components/packageiq/NavigationBar';
+import PackageNotFoundState from '../components/packageiq/PackageNotFoundState';
+
+const PACKAGE_NOT_FOUND = 'PACKAGE_NOT_FOUND';
+
+const normalizeAppError = (err, fallbackPackageName) => ({
+  code: err?.code || 'PACKAGE_LOOKUP_FAILED',
+  message: err?.message || 'Unable to load package data.',
+  packageName: err?.packageName || fallbackPackageName,
+});
 
 const CompareView = () => {
   const navigate = useNavigate();
@@ -16,6 +26,8 @@ const CompareView = () => {
   const [pkg2, setPkg2] = useState(null);
   const [verdict1, setVerdict1] = useState(null);
   const [verdict2, setVerdict2] = useState(null);
+  const [pkg1Error, setPkg1Error] = useState(null);
+  const [pkg2Error, setPkg2Error] = useState(null);
 
   const pkg1Name = searchParams.get('pkg1');
   const pkg2Name = searchParams.get('pkg2');
@@ -29,19 +41,44 @@ const CompareView = () => {
     const fetchBothPackages = async () => {
       setLoading(true);
       setError(null);
+      setPkg1(null);
+      setPkg2(null);
+      setVerdict1(null);
+      setVerdict2(null);
+      setPkg1Error(null);
+      setPkg2Error(null);
 
       try {
-        const [data1, data2] = await Promise.all([
+        const [result1, result2] = await Promise.allSettled([
           fetchPackageIntelligence(pkg1Name),
           fetchPackageIntelligence(pkg2Name),
         ]);
 
-        setPkg1(data1);
-        setPkg2(data2);
-        setVerdict1(generateVerdict(data1));
-        setVerdict2(generateVerdict(data2));
+        if (result1.status === 'fulfilled') {
+          setPkg1(result1.value);
+          setVerdict1(generateVerdict(result1.value));
+        } else {
+          const appError = normalizeAppError(result1.reason, pkg1Name);
+          if (appError.code === PACKAGE_NOT_FOUND) {
+            setPkg1Error(appError);
+          } else {
+            throw appError;
+          }
+        }
+
+        if (result2.status === 'fulfilled') {
+          setPkg2(result2.value);
+          setVerdict2(generateVerdict(result2.value));
+        } else {
+          const appError = normalizeAppError(result2.reason, pkg2Name);
+          if (appError.code === PACKAGE_NOT_FOUND) {
+            setPkg2Error(appError);
+          } else {
+            throw appError;
+          }
+        }
       } catch (err) {
-        setError(err.message);
+        setError(normalizeAppError(err));
       } finally {
         setLoading(false);
       }
@@ -57,6 +94,7 @@ const CompareView = () => {
   };
 
   const getComparisonColor = (val1, val2, higherIsBetter = true) => {
+    if (val2 === null || val2 === undefined) return 'text-slate-200';
     if (val1 === val2) return 'text-slate-400';
     const isBetter = higherIsBetter ? val1 > val2 : val1 < val2;
     return isBetter ? 'text-emerald-400' : 'text-red-400';
@@ -95,10 +133,13 @@ const CompareView = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 text-indigo-400 animate-spin mx-auto mb-4" />
-          <p className="text-slate-400">Loading package data...</p>
+      <div className="min-h-screen bg-[linear-gradient(180deg,_#020617_0%,_#0f172a_36%,_#020617_100%)]">
+        <NavigationBar />
+        <div className="flex items-center justify-center px-4 py-24">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-indigo-400 animate-spin mx-auto mb-4" />
+            <p className="text-slate-400">Loading package data...</p>
+          </div>
         </div>
       </div>
     );
@@ -106,30 +147,36 @@ const CompareView = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 mb-4">
-            {error}
+      <div className="min-h-screen bg-[linear-gradient(180deg,_#020617_0%,_#0f172a_36%,_#020617_100%)]">
+        <NavigationBar />
+        <div className="flex items-center justify-center px-4 py-24">
+          <div className="text-center max-w-md">
+            <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 mb-4">
+              {error.message}
+            </div>
+            <button
+              onClick={() => navigate('/')}
+              className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-medium transition-colors flex items-center gap-2 mx-auto"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Search
+            </button>
           </div>
-          <button
-            onClick={() => navigate('/')}
-            className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-medium transition-colors flex items-center gap-2 mx-auto"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Search
-          </button>
         </div>
       </div>
     );
   }
 
   const winner = getWinner();
+  const showCompareEmptyState = !pkg1 && !pkg2 && pkg1Error?.code === PACKAGE_NOT_FOUND && pkg2Error?.code === PACKAGE_NOT_FOUND;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      <div className="container mx-auto px-4 py-8 max-w-7xl">
+    <div className="min-h-screen bg-[linear-gradient(180deg,_#020617_0%,_#0f172a_36%,_#020617_100%)]">
+      <NavigationBar />
+
+      <div className="container mx-auto max-w-7xl px-4 py-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="mb-8 flex items-center justify-between">
           <button
             onClick={() => navigate('/')}
             className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors"
@@ -160,7 +207,12 @@ const CompareView = () => {
           </div>
         )}
 
-        {/* Comparison Grid */}
+        {showCompareEmptyState ? (
+          <PackageNotFoundState
+            packageName={`${pkg1Error.packageName} and ${pkg2Error.packageName}`}
+            context="compare"
+          />
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Package 1 */}
           {pkg1 && (
@@ -175,13 +227,13 @@ const CompareView = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
                   <p className="text-sm text-slate-400 mb-1">Downloads</p>
-                  <p className={`text-xl font-semibold ${getComparisonColor(pkg1.downloads, pkg2.downloads)}`}>
+                  <p className={`text-xl font-semibold ${getComparisonColor(pkg1.downloads, pkg2?.downloads)}`}>
                     {formatNumber(pkg1.downloads)}
                   </p>
                 </div>
                 <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
                   <p className="text-sm text-slate-400 mb-1">Health Score</p>
-                  <p className={`text-xl font-semibold ${getComparisonColor(pkg1.healthScore, pkg2.healthScore)}`}>
+                  <p className={`text-xl font-semibold ${getComparisonColor(pkg1.healthScore, pkg2?.healthScore)}`}>
                     {pkg1.healthScore}
                   </p>
                 </div>
@@ -206,6 +258,10 @@ const CompareView = () => {
             </div>
           )}
 
+          {pkg1Error?.code === PACKAGE_NOT_FOUND && (
+            <PackageNotFoundState packageName={pkg1Error.packageName} context="compare" />
+          )}
+
           {/* Package 2 */}
           {pkg2 && (
             <div className="space-y-6">
@@ -219,13 +275,13 @@ const CompareView = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
                   <p className="text-sm text-slate-400 mb-1">Downloads</p>
-                  <p className={`text-xl font-semibold ${getComparisonColor(pkg2.downloads, pkg1.downloads)}`}>
+                  <p className={`text-xl font-semibold ${getComparisonColor(pkg2.downloads, pkg1?.downloads)}`}>
                     {formatNumber(pkg2.downloads)}
                   </p>
                 </div>
                 <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
                   <p className="text-sm text-slate-400 mb-1">Health Score</p>
-                  <p className={`text-xl font-semibold ${getComparisonColor(pkg2.healthScore, pkg1.healthScore)}`}>
+                  <p className={`text-xl font-semibold ${getComparisonColor(pkg2.healthScore, pkg1?.healthScore)}`}>
                     {pkg2.healthScore}
                   </p>
                 </div>
@@ -249,7 +305,12 @@ const CompareView = () => {
               <AIVerdict verdict={verdict2} />
             </div>
           )}
+
+          {pkg2Error?.code === PACKAGE_NOT_FOUND && (
+            <PackageNotFoundState packageName={pkg2Error.packageName} context="compare" />
+          )}
         </div>
+        )}
       </div>
     </div>
   );

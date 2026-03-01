@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Loader2, GitCompare, History, X } from 'lucide-react';
+import { GitCompare, History, X } from 'lucide-react';
 import { fetchPackageIntelligence, generateVerdict } from '../services/api';
 import PackageCard from '../components/packageiq/PackageCard';
 import HealthScore from '../components/packageiq/HealthScore';
 import DownloadChart from '../components/packageiq/DownloadChart';
 import BundleSizeDisplay from '../components/packageiq/BundleSize';
 import AIVerdict from '../components/packageiq/AIVerdict';
+import NavigationBar from '../components/packageiq/NavigationBar';
+import HeroSection from '../components/packageiq/HeroSection';
+import PackageNotFoundState from '../components/packageiq/PackageNotFoundState';
+
+const PACKAGE_NOT_FOUND = 'PACKAGE_NOT_FOUND';
 
 const PackageSearch = () => {
   const navigate = useNavigate();
@@ -57,7 +62,11 @@ const PackageSearch = () => {
       const aiVerdict = generateVerdict(data);
       setVerdict(aiVerdict);
     } catch (err) {
-      setError(err.message);
+      setError({
+        code: err?.code || 'PACKAGE_LOOKUP_FAILED',
+        message: err?.message || 'Unable to load package data.',
+        packageName: err?.packageName || searchTerm.trim().toLowerCase(),
+      });
     } finally {
       setLoading(false);
     }
@@ -86,51 +95,26 @@ const PackageSearch = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-4">
-            PackageIQ
-          </h1>
-          <p className="text-xl text-slate-400">
-            NPM Package Intelligence Hub
-          </p>
-        </div>
+    <div className="min-h-screen bg-[linear-gradient(180deg,_#020617_0%,_#0f172a_36%,_#020617_100%)]">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute left-[8%] top-24 h-72 w-72 rounded-full bg-cyan-400/10 blur-3xl" />
+        <div className="absolute right-[10%] top-40 h-80 w-80 rounded-full bg-fuchsia-500/10 blur-3xl" />
+        <div className="absolute bottom-0 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-indigo-500/10 blur-3xl" />
+      </div>
 
-        {/* Search Form */}
-        <form id="search-form" onSubmit={handleSearch} className="mb-8">
-          <div className="relative max-w-2xl mx-auto">
-            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-              <Search className="w-5 h-5 text-slate-400" />
-            </div>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search npm packages (e.g., react, lodash, axios...)"
-              className="w-full pl-12 pr-4 py-4 rounded-2xl bg-slate-800/80 border border-slate-700 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all text-lg"
-            />
-            <button
-              type="submit"
-              disabled={loading || !searchTerm.trim()}
-              className="absolute right-2 top-2 bottom-2 px-6 rounded-xl bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium transition-colors flex items-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Analyzing...
-                </>
-              ) : (
-                'Analyze'
-              )}
-            </button>
-          </div>
-        </form>
+      <NavigationBar />
+
+      <div className="container relative mx-auto max-w-6xl px-4 pb-12 pt-6">
+        <HeroSection
+          loading={loading}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          onSubmit={handleSearch}
+        />
 
         {/* Search History */}
-        {searchHistory.length > 0 && !packageData && (
-          <div className="max-w-2xl mx-auto mb-8">
+        {searchHistory.length > 0 && !packageData && !error && (
+          <div className="mx-auto mt-8 max-w-3xl rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 backdrop-blur-xl">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-medium text-slate-400 flex items-center gap-2">
                 <History className="w-4 h-4" />
@@ -159,15 +143,21 @@ const PackageSearch = () => {
         )}
 
         {/* Error Message */}
-        {error && (
-          <div className="max-w-2xl mx-auto mb-8 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400">
-            {error}
+        {error?.code === PACKAGE_NOT_FOUND && (
+          <div className="mx-auto mt-8 max-w-4xl">
+            <PackageNotFoundState packageName={error.packageName || searchTerm.trim().toLowerCase()} />
+          </div>
+        )}
+
+        {error && error.code !== PACKAGE_NOT_FOUND && (
+          <div className="mx-auto mt-8 max-w-3xl rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-400">
+            {error.message}
           </div>
         )}
 
         {/* Results */}
         {packageData && (
-          <div className="space-y-6">
+          <div className="mt-10 space-y-6">
             {/* Package Card */}
             <PackageCard pkg={packageData} />
 
@@ -185,7 +175,7 @@ const PackageSearch = () => {
             <AIVerdict verdict={verdict} />
 
             {/* Compare Section */}
-            <div className="p-6 rounded-2xl border border-slate-700/50 bg-slate-800/50 backdrop-blur-sm">
+            <div className="rounded-[1.75rem] border border-white/10 bg-slate-950/60 p-6 backdrop-blur-xl">
               <div className="flex items-center gap-3 mb-4">
                 <GitCompare className="w-5 h-5 text-indigo-400" />
                 <h3 className="text-lg font-semibold text-slate-200">Compare with another package</h3>
