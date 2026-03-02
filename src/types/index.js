@@ -17,6 +17,10 @@
  * @property {Vulnerabilities} vulnerabilities - Security vulnerabilities
  * @property {string} lastPublished - Last publish date
  * @property {string} created - Creation date
+ * @property {MaintenanceData} maintenance - Maintenance status summary
+ * @property {TrustSignals} trustSignals - Trust and risk indicators
+ * @property {DecisionData} decision - Decision-oriented recommendation payload
+ * @property {Alternative[]} alternatives - Suggested alternatives to compare
  */
 
 /**
@@ -42,6 +46,7 @@
  * @property {string} description - Repository description
  * @property {string} homepage - Repository homepage
  * @property {string} url - GitHub URL
+ * @property {boolean} archived - Repository archived flag
  */
 
 /**
@@ -53,8 +58,12 @@
 /**
  * @typedef {Object} Verdict
  * @property {string} overall - 'recommended' | 'neutral' | 'not-recommended'
+ * @property {string} label - Decision label for the package
+ * @property {number} confidence - Recommendation confidence percentage
  * @property {string} recommendation - Human-readable recommendation
  * @property {Array} verdicts - List of individual verdict items
+ * @property {string[]} reasons - Key reasons behind the recommendation
+ * @property {string} nextStep - Suggested next action
  * @property {number} score - Health score
  */
 
@@ -62,6 +71,42 @@
  * @typedef {Object} VerdictItem
  * @property {string} type - 'positive' | 'warning' | 'negative'
  * @property {string} text - Verdict text
+ */
+
+/**
+ * @typedef {Object} MaintenanceData
+ * @property {'active'|'slow'|'stale'} status
+ * @property {string|null} lastReleaseDate
+ * @property {string|null} lastCommitDate
+ * @property {'high'|'medium'|'low'} releaseFrequency
+ * @property {number} maintainersCount
+ */
+
+/**
+ * @typedef {Object} TrustSignals
+ * @property {boolean} hasTypes
+ * @property {boolean} hasHomepage
+ * @property {boolean} hasRepository
+ * @property {boolean|null} archived
+ * @property {'safe'|'review'|'unknown'} licenseRisk
+ * @property {number|null} issueRatio
+ * @property {boolean} singleMaintainerRisk
+ * @property {number|null} dependencyCount
+ */
+
+/**
+ * @typedef {Object} DecisionData
+ * @property {'install'|'caution'|'avoid'|'review'|'good-but-heavy'|'good-but-stale'|'prefer-alternative'} label
+ * @property {number} confidence
+ * @property {string[]} reasons
+ * @property {string} nextStep
+ */
+
+/**
+ * @typedef {Object} Alternative
+ * @property {string} name
+ * @property {string} reason
+ * @property {'lighter'|'safer'|'more-popular'|'better-maintained'} relativeStrength
  */
 
 // Export empty object since JSDoc types are for documentation only

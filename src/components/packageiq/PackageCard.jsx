@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { 
   ExternalLink, 
   Github, 
@@ -7,9 +7,12 @@ import {
   AlertCircle, 
   Calendar,
   Users,
-  Tag
+  Tag,
+  Shield,
+  Clock3
 } from 'lucide-react';
-import InstallCommands from './InstallCommands';
+
+const InstallCommands = lazy(() => import('./InstallCommands'));
 
 const PackageCard = ({ pkg }) => {
   const formatNumber = (num) => {
@@ -71,7 +74,9 @@ const PackageCard = ({ pkg }) => {
 
       {/* Install Commands */}
       <div className="mb-6">
-        <InstallCommands packageName={pkg.name} />
+        <Suspense fallback={<div className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-4 text-sm text-slate-400">Loading install examples...</div>}>
+          <InstallCommands packageName={pkg.name} />
+        </Suspense>
       </div>
 
       {/* Stats Grid */}
@@ -137,6 +142,22 @@ const PackageCard = ({ pkg }) => {
             <Users className="w-4 h-4 text-slate-400" />
             <span className="text-slate-400">Maintainers:</span>
             <span className="text-slate-200 font-medium">{pkg.maintainers}</span>
+          </div>
+        )}
+
+        {pkg.maintenance?.lastReleaseDate && (
+          <div className="flex items-center gap-2">
+            <Clock3 className="w-4 h-4 text-slate-400" />
+            <span className="text-slate-400">Last release:</span>
+            <span className="text-slate-200 font-medium">{formatDate(pkg.maintenance.lastReleaseDate)}</span>
+          </div>
+        )}
+
+        {pkg.trustSignals?.licenseRisk && (
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-slate-400" />
+            <span className="text-slate-400">License risk:</span>
+            <span className="text-slate-200 font-medium capitalize">{pkg.trustSignals.licenseRisk}</span>
           </div>
         )}
       </div>

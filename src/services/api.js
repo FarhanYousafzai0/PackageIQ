@@ -47,11 +47,169 @@ const githubClient = axios.create({
 
 const PACKAGE_NOT_FOUND = 'PACKAGE_NOT_FOUND';
 const PACKAGE_LOOKUP_FAILED = 'PACKAGE_LOOKUP_FAILED';
+const SAFE_LICENSES = new Set([
+  'MIT',
+  'ISC',
+  'Apache-2.0',
+  'BSD-2-Clause',
+  'BSD-3-Clause',
+  'Unlicense',
+  'CC0-1.0',
+]);
+
+const ALTERNATIVE_SEEDS = {
+  axios: [
+    { name: 'ky', relativeStrength: 'lighter', reason: 'Smaller fetch wrapper for browser-first apps.' },
+    { name: 'ofetch', relativeStrength: 'better-maintained', reason: 'Modern fetch API with SSR-friendly ergonomics.' },
+    { name: 'cross-fetch', relativeStrength: 'safer', reason: 'Simpler universal fetch approach with less abstraction.' },
+  ],
+  moment: [
+    { name: 'date-fns', relativeStrength: 'lighter', reason: 'Tree-shakeable utilities with better bundle control.' },
+    { name: 'dayjs', relativeStrength: 'more-popular', reason: 'Moment-like API with a much smaller footprint.' },
+    { name: 'luxon', relativeStrength: 'better-maintained', reason: 'Better timezone support for modern apps.' },
+  ],
+  redux: [
+    { name: 'zustand', relativeStrength: 'lighter', reason: 'Lower-boilerplate state management for React apps.' },
+    { name: 'jotai', relativeStrength: 'better-maintained', reason: 'Atomic state model that stays small and flexible.' },
+    { name: '@reduxjs/toolkit', relativeStrength: 'safer', reason: 'Safer Redux default if you want to stay in the Redux ecosystem.' },
+  ],
+  formik: [
+    { name: 'react-hook-form', relativeStrength: 'lighter', reason: 'Better performance and lower rerender cost for forms.' },
+    { name: 'houseform', relativeStrength: 'better-maintained', reason: 'Modern form ergonomics if you want typed validation flows.' },
+  ],
+  lodash: [
+    { name: 'radash', relativeStrength: 'lighter', reason: 'Modern utility set with a smaller surface area.' },
+    { name: 'remeda', relativeStrength: 'safer', reason: 'Type-safe functional utilities for TypeScript-heavy projects.' },
+  ],
+  'react-query': [
+    { name: 'swr', relativeStrength: 'lighter', reason: 'Smaller data fetching footprint for simpler cache needs.' },
+    { name: '@tanstack/query-core', relativeStrength: 'safer', reason: 'Stay in the TanStack ecosystem if you need lower-level control.' },
+  ],
+};
 
 const createPackageError = (code, packageName, message) =>
   Object.assign(new Error(message), { code, packageName });
 
 const normalizePackageName = (packageName = '') => packageName.trim().toLowerCase();
+
+const daysBetweenNow = (dateStr) => {
+  if (!dateStr) return Infinity;
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return Infinity;
+  return (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24);
+};
+
+const getRecentVersionDates = (time = {}, windowDays = 180) => {
+  const threshold = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+
+  return Object.entries(time)
+    .filter(([version]) => version !== 'created' && version !== 'modified')
+    .map(([, publishedAt]) => new Date(publishedAt).getTime())
+    .filter((publishedAt) => !Number.isNaN(publishedAt) && publishedAt >= threshold)
+    .sort((a, b) => b - a);
+};
+
+const getReleaseFrequency = (time = {}) => {
+  const recentReleases = getRecentVersionDates(time, 180).length;
+  if (recentReleases >= 8) return 'high';
+  if (recentReleases >= 3) return 'medium';
+  return 'low';
+};
+
+const getMaintenanceStatus = ({ lastPublished, lastPush }) => {
+  const freshestSignal = Math.min(daysBetweenNow(lastPublished), daysBetweenNow(lastPush));
+  if (freshestSignal <= 45) return 'active';
+  if (freshestSignal <= 180) return 'slow';
+  return 'stale';
+};
+
+const getLicenseRisk = (license) => {
+  if (!license || license === 'Unknown') return 'unknown';
+  return SAFE_LICENSES.has(license) ? 'safe' : 'review';
+};
+
+const inferPackageCategories = (pkg) => {
+  const haystack = [
+    pkg.name,
+    pkg.description,
+    ...(pkg.keywords || []),
+    ...(pkg.github?.topics || []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  const categories = [];
+  if (/(fetch|http|request|axios|api|network)/.test(haystack)) categories.push('http');
+  if (/(date|time|moment|calendar|timezone)/.test(haystack)) categories.push('date');
+  if (/(form|validation|field|input)/.test(haystack)) categories.push('forms');
+  if (/(state|store|redux|atom)/.test(haystack)) categories.push('state');
+  if (/(query|cache|swr|tanstack)/.test(haystack)) categories.push('data-fetching');
+  if (/(utility|utils|helpers|lodash)/.test(haystack)) categories.push('utilities');
+  return categories;
+};
+
+const buildAlternatives = (pkg) => {
+  const categories = inferPackageCategories(pkg);
+  const curated = ALTERNATIVE_SEEDS[pkg.name] || [];
+  const categorySuggestions = categories.flatMap((category) => {
+    switch (category) {
+      case 'http':
+        return ALTERNATIVE_SEEDS.axios || [];
+      case 'date':
+        return ALTERNATIVE_SEEDS.moment || [];
+      case 'forms':
+        return ALTERNATIVE_SEEDS.formik || [];
+      case 'state':
+        return ALTERNATIVE_SEEDS.redux || [];
+      case 'data-fetching':
+        return ALTERNATIVE_SEEDS['react-query'] || [];
+      case 'utilities':
+        return ALTERNATIVE_SEEDS.lodash || [];
+      default:
+        return [];
+    }
+  });
+
+  return [...curated, ...categorySuggestions]
+    .filter((alternative) => normalizePackageName(alternative.name) !== pkg.name)
+    .filter((alternative, index, all) =>
+      all.findIndex((candidate) => normalizePackageName(candidate.name) === normalizePackageName(alternative.name)) === index
+    )
+    .slice(0, 4);
+};
+
+const buildMaintenanceData = ({ npmData, githubData, latestVersion }) => {
+  const lastReleaseDate = npmData.time?.[latestVersion] || null;
+  const lastCommitDate = githubData?.lastPush || null;
+
+  return {
+    status: getMaintenanceStatus({ lastPublished: lastReleaseDate, lastPush: lastCommitDate }),
+    lastReleaseDate,
+    lastCommitDate,
+    releaseFrequency: getReleaseFrequency(npmData.time),
+    maintainersCount: npmData.maintainers?.length || 0,
+  };
+};
+
+const buildTrustSignals = ({ npmData, latestRelease, githubData, maintainersCount, bundleSize }) => ({
+  hasTypes: !!latestRelease?.types || !!latestRelease?.typings || !!npmData.types || !!npmData.typings,
+  hasHomepage: !!npmData.homepage,
+  hasRepository: !!npmData.repository,
+  archived: githubData?.archived ?? null,
+  licenseRisk: getLicenseRisk(npmData.license || githubData?.license || 'Unknown'),
+  issueRatio: githubData?.stars ? (githubData.openIssues || 0) / Math.max(githubData.stars, 1) : null,
+  singleMaintainerRisk: maintainersCount <= 1,
+  dependencyCount: bundleSize?.dependencyCount ?? null,
+});
+
+const getDecisionConfidence = (score) => {
+  if (score >= 85) return 90;
+  if (score >= 70) return 78;
+  if (score >= 55) return 68;
+  if (score >= 40) return 58;
+  return 45;
+};
 
 const isNotFoundError = (error) =>
   axios.isAxiosError(error) && error.response?.status === 404;
@@ -303,6 +461,7 @@ export const fetchGithubRepo = async (owner, repo) => {
       topics: response.data.topics || [],
       description: response.data.description,
       homepage: response.data.homepage,
+      archived: response.data.archived ?? false,
     };
   } catch (error) {
     // Try with CORS proxy
@@ -319,6 +478,7 @@ export const fetchGithubRepo = async (owner, repo) => {
         topics: response.data.topics || [],
         description: response.data.description,
         homepage: response.data.homepage,
+        archived: response.data.archived ?? false,
       };
     } catch (proxyError) {
       return null;
@@ -400,6 +560,19 @@ export const fetchPackageIntelligence = async (packageName) => {
   // Get latest version
   const latestVersion = npmData['dist-tags']?.latest || 'unknown';
   const latestRelease = npmData.versions?.[latestVersion];
+  const maintainersCount = npmData.maintainers?.length || 0;
+  const maintenance = buildMaintenanceData({
+    npmData,
+    githubData,
+    latestVersion,
+  });
+  const trustSignals = buildTrustSignals({
+    npmData,
+    latestRelease,
+    githubData,
+    maintainersCount,
+    bundleSize,
+  });
 
   // Calculate health score
   const healthScore = calculateHealthScore({
@@ -408,17 +581,17 @@ export const fetchPackageIntelligence = async (packageName) => {
     stars: githubData?.stars || 0,
     lastPush: githubData?.lastPush,
     openIssues: githubData?.openIssues || 0,
-    hasTypes: !!latestRelease?.types || !!npmData.types,
+    hasTypes: trustSignals.hasTypes,
   });
 
-  return {
+  const packageBase = {
     name: cleanName,
     version: latestVersion,
     description: npmData.description || '',
     license: npmData.license || 'Unknown',
     homepage: npmData.homepage || '',
     keywords: npmData.keywords || [],
-    maintainers: npmData.maintainers?.length || 0,
+    maintainers: maintainersCount,
 
     // npm stats
     downloads: downloads.downloads,
@@ -442,6 +615,20 @@ export const fetchPackageIntelligence = async (packageName) => {
     // Metadata
     lastPublished: npmData.time?.[latestVersion],
     created: npmData.time?.created,
+    maintenance,
+    trustSignals,
+  };
+
+  const alternatives = buildAlternatives(packageBase);
+  const decision = generateVerdict({
+    ...packageBase,
+    alternatives,
+  });
+
+  return {
+    ...packageBase,
+    decision,
+    alternatives,
   };
 };
 
@@ -495,65 +682,96 @@ const calculateHealthScore = (metrics) => {
  */
 export const generateVerdict = (pkg) => {
   const verdicts = [];
+  const reasons = [];
+  let label = 'review';
   let overall = 'neutral';
-  let recommendation = '';
-  
-  // High downloads = popular
+  let recommendation = 'Review the tradeoffs before adopting this package.';
+  let nextStep = 'Compare it with a lighter or more maintained alternative.';
+
   if (pkg.downloads > 1000000) {
-    verdicts.push({ type: 'positive', text: 'Extremely popular with over 1M weekly downloads' });
+    verdicts.push({ type: 'positive', text: 'Extremely popular with strong weekly adoption.' });
+    reasons.push('Strong community adoption lowers ecosystem risk.');
   } else if (pkg.downloads > 100000) {
-    verdicts.push({ type: 'positive', text: 'Very popular in the community' });
+    verdicts.push({ type: 'positive', text: 'Healthy adoption across production projects.' });
+    reasons.push('Adoption is strong enough for common frontend use cases.');
   } else if (pkg.downloads < 1000) {
-    verdicts.push({ type: 'warning', text: 'Low adoption - consider alternatives' });
+    verdicts.push({ type: 'warning', text: 'Low adoption means less ecosystem proof.' });
+    reasons.push('Community adoption is low for a production dependency.');
   }
-  
-  // GitHub activity
-  if (pkg.github) {
-    const daysSince = pkg.github.lastPush 
-      ? (Date.now() - new Date(pkg.github.lastPush).getTime()) / (1000 * 60 * 60 * 24)
-      : Infinity;
-    
-    if (daysSince < 7) {
-      verdicts.push({ type: 'positive', text: 'Actively maintained (updated this week)' });
-    } else if (daysSince > 180) {
-      verdicts.push({ type: 'warning', text: 'May be unmaintained (no updates in 6+ months)' });
-    }
-    
-    if (pkg.github.stars > 5000) {
-      verdicts.push({ type: 'positive', text: 'Strong community support on GitHub' });
-    }
+
+  if (pkg.maintenance?.status === 'active') {
+    verdicts.push({ type: 'positive', text: 'Maintenance signals are recent.' });
+    reasons.push('Recent releases or repository activity suggest active upkeep.');
+  } else if (pkg.maintenance?.status === 'slow') {
+    verdicts.push({ type: 'warning', text: 'Maintenance looks slower than top alternatives.' });
+    reasons.push('Release cadence is moderate, so review fit before standardizing.');
   } else {
-    verdicts.push({ type: 'warning', text: 'No GitHub repository linked' });
+    verdicts.push({ type: 'negative', text: 'Maintenance signals look stale.' });
+    reasons.push('Low release activity increases long-term replacement risk.');
   }
-  
-  // Bundle size
-  if (pkg.bundleSize) {
-    if (pkg.bundleSize.gzip < 10000) {
-      verdicts.push({ type: 'positive', text: 'Lightweight bundle size' });
-    } else if (pkg.bundleSize.gzip > 100000) {
-      verdicts.push({ type: 'warning', text: 'Large bundle size - consider tree-shaking' });
-    }
+
+  if (pkg.bundleSize?.gzip < 12000) {
+    verdicts.push({ type: 'positive', text: 'Bundle cost is friendly for client-side apps.' });
+    reasons.push('Low gzip size keeps frontend bundle impact under control.');
+  } else if (pkg.bundleSize?.gzip > 90000) {
+    verdicts.push({ type: 'warning', text: 'Bundle cost is high for browser bundles.' });
+    reasons.push('A heavy bundle can hurt page load and runtime performance.');
   }
-  
-  // Health score
-  if (pkg.healthScore >= 80) {
+
+  if (pkg.trustSignals?.singleMaintainerRisk) {
+    verdicts.push({ type: 'warning', text: 'Single-maintainer risk is worth reviewing.' });
+    reasons.push('A lone maintainer can become a support bottleneck.');
+  }
+
+  if (pkg.trustSignals?.licenseRisk === 'review') {
+    verdicts.push({ type: 'warning', text: 'License should be reviewed for team compatibility.' });
+    reasons.push('License terms are not in the default low-risk allowlist.');
+  }
+
+  if (pkg.trustSignals?.hasTypes) {
+    verdicts.push({ type: 'positive', text: 'TypeScript support is available.' });
+  }
+
+  if (pkg.healthScore >= 82 && pkg.maintenance?.status === 'active' && (!pkg.bundleSize || pkg.bundleSize.gzip < 60000)) {
     overall = 'recommended';
-    recommendation = 'Excellent choice - highly recommended for production use';
-  } else if (pkg.healthScore >= 60) {
-    overall = 'recommended';
-    recommendation = 'Good package - suitable for most use cases';
+    label = 'install';
+    recommendation = 'Install for production use.';
+    nextStep = 'Use this as the default choice unless you need a specialized feature set.';
+  } else if (pkg.healthScore >= 65 && pkg.bundleSize?.gzip > 90000) {
+    overall = 'neutral';
+    label = 'good-but-heavy';
+    recommendation = 'Good package, but heavy for bundle-sensitive apps.';
+    nextStep = 'Compare it with a lighter alternative before shipping it to the client.';
+  } else if (pkg.healthScore >= 60 && pkg.maintenance?.status === 'stale') {
+    overall = 'neutral';
+    label = 'good-but-stale';
+    recommendation = 'Useful package, but maintenance looks stale.';
+    nextStep = 'Validate activity and review the alternatives before adopting it broadly.';
+  } else if (pkg.healthScore >= 58) {
+    overall = 'neutral';
+    label = 'caution';
+    recommendation = 'Use with caution.';
+    nextStep = 'Compare against alternatives and review the tradeoffs for your bundle and maintenance needs.';
   } else if (pkg.healthScore >= 40) {
     overall = 'neutral';
-    recommendation = 'Adequate package - evaluate alternatives';
+    label = 'prefer-alternative';
+    recommendation = 'Prefer an alternative unless this package has a feature you specifically need.';
+    nextStep = 'Review the suggested alternatives and compare migration tradeoffs.';
   } else {
     overall = 'not-recommended';
-    recommendation = 'Consider more popular/maintained alternatives';
+    label = 'avoid';
+    recommendation = 'Avoid for new production work.';
+    nextStep = 'Pick a more maintained or lighter alternative before adopting it.';
   }
-  
+
   return {
     overall,
+    label,
+    confidence: getDecisionConfidence(pkg.healthScore),
     recommendation,
     verdicts,
+    reasons: reasons.slice(0, 4),
+    nextStep,
     score: pkg.healthScore,
   };
 };

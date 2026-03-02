@@ -1,13 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, GitCompare, Scale } from 'lucide-react';
 import { fetchPackageIntelligence, generateVerdict } from '../services/api';
 import HealthScore from '../components/packageiq/HealthScore';
-import DownloadChart from '../components/packageiq/DownloadChart';
 import BundleSizeDisplay from '../components/packageiq/BundleSize';
 import AIVerdict from '../components/packageiq/AIVerdict';
 import NavigationBar from '../components/packageiq/NavigationBar';
 import PackageNotFoundState from '../components/packageiq/PackageNotFoundState';
+import CompareDecisionSummary from '../components/packageiq/CompareDecisionSummary';
+import TrustSignals from '../components/packageiq/TrustSignals';
+import CompareLauncher from '../components/packageiq/CompareLauncher';
+import AlternativesPanel from '../components/packageiq/AlternativesPanel';
+import { trackCompareView } from '../services/analytics';
+
+const DownloadChart = lazy(() => import('../components/packageiq/DownloadChart'));
 
 const PACKAGE_NOT_FOUND = 'PACKAGE_NOT_FOUND';
 
@@ -28,13 +34,24 @@ const CompareView = () => {
   const [verdict2, setVerdict2] = useState(null);
   const [pkg1Error, setPkg1Error] = useState(null);
   const [pkg2Error, setPkg2Error] = useState(null);
+  const [packageOneInput, setPackageOneInput] = useState(pkg1Name || '');
+  const [packageTwoInput, setPackageTwoInput] = useState(pkg2Name || '');
 
   const pkg1Name = searchParams.get('pkg1');
   const pkg2Name = searchParams.get('pkg2');
 
   useEffect(() => {
+    setPackageOneInput(pkg1Name || '');
+    setPackageTwoInput(pkg2Name || '');
+  }, [pkg1Name, pkg2Name]);
+
+  useEffect(() => {
+    trackCompareView();
+  }, []);
+
+  useEffect(() => {
     if (!pkg1Name || !pkg2Name) {
-      navigate('/');
+      setLoading(false);
       return;
     }
 
@@ -56,7 +73,7 @@ const CompareView = () => {
 
         if (result1.status === 'fulfilled') {
           setPkg1(result1.value);
-          setVerdict1(generateVerdict(result1.value));
+          setVerdict1(result1.value.decision || generateVerdict(result1.value));
         } else {
           const appError = normalizeAppError(result1.reason, pkg1Name);
           if (appError.code === PACKAGE_NOT_FOUND) {
@@ -68,7 +85,7 @@ const CompareView = () => {
 
         if (result2.status === 'fulfilled') {
           setPkg2(result2.value);
-          setVerdict2(generateVerdict(result2.value));
+          setVerdict2(result2.value.decision || generateVerdict(result2.value));
         } else {
           const appError = normalizeAppError(result2.reason, pkg2Name);
           if (appError.code === PACKAGE_NOT_FOUND) {
@@ -86,6 +103,16 @@ const CompareView = () => {
 
     fetchBothPackages();
   }, [pkg1Name, pkg2Name, navigate]);
+
+  const handleCompareSubmit = (e) => {
+    e.preventDefault();
+    if (!packageOneInput.trim() || !packageTwoInput.trim()) return;
+    navigate(`/compare?pkg1=${packageOneInput.trim()}&pkg2=${packageTwoInput.trim()}`);
+  };
+
+  const handleAlternativeCompare = (basePackage, alternativePackage) => {
+    navigate(`/compare?pkg1=${basePackage}&pkg2=${alternativePackage}`);
+  };
 
   const formatNumber = (num) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -135,10 +162,21 @@ const CompareView = () => {
     return (
       <div className="min-h-screen bg-[linear-gradient(180deg,_#020617_0%,_#0f172a_36%,_#020617_100%)]">
         <NavigationBar />
-        <div className="flex items-center justify-center px-4 py-24">
-          <div className="text-center">
-            <Loader2 className="w-12 h-12 text-indigo-400 animate-spin mx-auto mb-4" />
-            <p className="text-slate-400">Loading package data...</p>
+        <div className="container mx-auto max-w-7xl px-4 py-8">
+          <CompareLauncher
+            packageOne={packageOneInput}
+            packageTwo={packageTwoInput}
+            setPackageOne={setPackageOneInput}
+            setPackageTwo={setPackageTwoInput}
+            onSubmit={handleCompareSubmit}
+            loading
+            title="Compare packages side by side"
+          />
+          <div className="flex items-center justify-center px-4 py-24">
+            <div className="text-center">
+              <Loader2 className="w-12 h-12 text-indigo-400 animate-spin mx-auto mb-4" />
+              <p className="text-slate-400">Loading package data...</p>
+            </div>
           </div>
         </div>
       </div>
@@ -149,18 +187,28 @@ const CompareView = () => {
     return (
       <div className="min-h-screen bg-[linear-gradient(180deg,_#020617_0%,_#0f172a_36%,_#020617_100%)]">
         <NavigationBar />
-        <div className="flex items-center justify-center px-4 py-24">
-          <div className="text-center max-w-md">
-            <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 mb-4">
-              {error.message}
+        <div className="container mx-auto max-w-7xl px-4 py-8">
+          <CompareLauncher
+            packageOne={packageOneInput}
+            packageTwo={packageTwoInput}
+            setPackageOne={setPackageOneInput}
+            setPackageTwo={setPackageTwoInput}
+            onSubmit={handleCompareSubmit}
+            title="Compare packages side by side"
+          />
+          <div className="flex items-center justify-center px-4 py-24">
+            <div className="text-center max-w-md">
+              <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 mb-4">
+                {error.message}
+              </div>
+              <button
+                onClick={() => navigate('/')}
+                className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-medium transition-colors flex items-center gap-2 mx-auto"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Search
+              </button>
             </div>
-            <button
-              onClick={() => navigate('/')}
-              className="px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-medium transition-colors flex items-center gap-2 mx-auto"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Search
-            </button>
           </div>
         </div>
       </div>
@@ -175,25 +223,26 @@ const CompareView = () => {
       <NavigationBar />
 
       <div className="container mx-auto max-w-7xl px-4 py-8">
-        {/* Header */}
-        <div className="mb-8 flex items-center justify-between">
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-2 text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            Back to Search
-          </button>
-          <h1 className="text-3xl font-bold text-slate-200 flex items-center gap-3">
-            <GitCompare className="w-8 h-8 text-indigo-400" />
-            Package Comparison
-          </h1>
-          <div className="w-24" /> {/* Spacer for centering */}
-        </div>
+        <CompareLauncher
+          packageOne={packageOneInput}
+          packageTwo={packageTwoInput}
+          setPackageOne={setPackageOneInput}
+          setPackageTwo={setPackageTwoInput}
+          onSubmit={handleCompareSubmit}
+          title="Package comparison"
+        />
 
         {/* Winner Banner */}
-        {winner && (
-          <div className="mb-8 p-6 rounded-2xl bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-pink-500/20 border border-indigo-500/30 backdrop-blur-sm">
+        {!pkg1Name || !pkg2Name ? (
+          <div className="mt-8 rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-8 text-center backdrop-blur-xl">
+            <p className="text-xs uppercase tracking-[0.28em] text-cyan-300/70">Start here</p>
+            <h1 className="mt-3 text-3xl font-bold text-white sm:text-4xl">Compare before you install</h1>
+            <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-slate-400 sm:text-base">
+              Enter two package names above and PackageIQ will compare maintenance, bundle size, community support, and likely tradeoffs.
+            </p>
+          </div>
+        ) : winner && (
+          <div className="mb-8 mt-8 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-pink-500/20 p-6 backdrop-blur-sm">
             <div className="flex items-center justify-center gap-4">
               <Scale className="w-8 h-8 text-indigo-400" />
               <div className="text-center">
@@ -213,6 +262,12 @@ const CompareView = () => {
             context="compare"
           />
         ) : (
+        <>
+        {pkg1 && pkg2 && (
+          <div className="mb-8">
+            <CompareDecisionSummary pkg1={pkg1} pkg2={pkg2} verdict1={verdict1} verdict2={verdict2} />
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Package 1 */}
           {pkg1 && (
@@ -251,10 +306,18 @@ const CompareView = () => {
                 </div>
               </div>
 
+              <TrustSignals maintenance={pkg1.maintenance} trustSignals={pkg1.trustSignals} />
               <HealthScore score={pkg1.healthScore} />
               <BundleSizeDisplay bundleSize={pkg1.bundleSize} />
-              <DownloadChart data={pkg1.downloadTrends} packageName={pkg1.name} />
+              <Suspense fallback={<div className="rounded-2xl border border-slate-700/50 bg-slate-800/50 p-6 text-slate-400">Loading trend chart...</div>}>
+                <DownloadChart data={pkg1.downloadTrends} packageName={pkg1.name} />
+              </Suspense>
               <AIVerdict verdict={verdict1} />
+              <AlternativesPanel
+                packageName={pkg1.name}
+                alternatives={pkg1.alternatives}
+                onCompare={handleAlternativeCompare}
+              />
             </div>
           )}
 
@@ -299,10 +362,18 @@ const CompareView = () => {
                 </div>
               </div>
 
+              <TrustSignals maintenance={pkg2.maintenance} trustSignals={pkg2.trustSignals} />
               <HealthScore score={pkg2.healthScore} />
               <BundleSizeDisplay bundleSize={pkg2.bundleSize} />
-              <DownloadChart data={pkg2.downloadTrends} packageName={pkg2.name} />
+              <Suspense fallback={<div className="rounded-2xl border border-slate-700/50 bg-slate-800/50 p-6 text-slate-400">Loading trend chart...</div>}>
+                <DownloadChart data={pkg2.downloadTrends} packageName={pkg2.name} />
+              </Suspense>
               <AIVerdict verdict={verdict2} />
+              <AlternativesPanel
+                packageName={pkg2.name}
+                alternatives={pkg2.alternatives}
+                onCompare={handleAlternativeCompare}
+              />
             </div>
           )}
 
@@ -310,6 +381,7 @@ const CompareView = () => {
             <PackageNotFoundState packageName={pkg2Error.packageName} context="compare" />
           )}
         </div>
+        </>
         )}
       </div>
     </div>
