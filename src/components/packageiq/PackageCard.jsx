@@ -11,16 +11,31 @@ import {
   Shield,
   Clock3
 } from 'lucide-react';
+import useCountUp from '../../hooks/useCountUp';
 
 const InstallCommands = lazy(() => import('./InstallCommands'));
 
-const PackageCard = ({ pkg }) => {
-  const formatNumber = (num) => {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-    return num.toString();
+const AnimatedStat = ({ value, icon: Icon, iconColor, label, suffix }) => {
+  const formatNum = (n) => {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return n.toString();
   };
+  const displayed = useCountUp(value, { duration: 900, formatter: formatNum });
 
+  return (
+    <div className="p-3 rounded-xl bg-white/5 border border-white/10 card-hover">
+      <div className="flex items-center gap-2 mb-1">
+        <Icon className={`w-4 h-4 ${iconColor}`} />
+        <span className="text-xs text-slate-400">{label}</span>
+      </div>
+      <p className="text-lg font-semibold text-slate-200">{displayed}</p>
+      {suffix && <p className="text-xs text-slate-500">{suffix}</p>}
+    </div>
+  );
+};
+
+const PackageCard = ({ pkg }) => {
   const formatDate = (dateStr) => {
     if (!dateStr) return 'Unknown';
     const date = new Date(dateStr);
@@ -36,8 +51,7 @@ const PackageCard = ({ pkg }) => {
   };
 
   return (
-    <div className="p-6 rounded-2xl border border-slate-700/50 bg-slate-800/50 backdrop-blur-sm">
-      {/* Header */}
+    <div className="rounded-[1.75rem] border border-white/10 bg-slate-950/60 p-6 backdrop-blur-xl card-hover">
       <div className="flex items-start justify-between mb-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-100">{pkg.name}</h2>
@@ -49,7 +63,7 @@ const PackageCard = ({ pkg }) => {
               href={pkg.homepage}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 transition-colors"
+              className="p-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
               title="Homepage"
             >
               <ExternalLink className="w-4 h-4 text-slate-400" />
@@ -60,7 +74,7 @@ const PackageCard = ({ pkg }) => {
               href={pkg.github.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 transition-colors"
+              className="p-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
               title="GitHub"
             >
               <Github className="w-4 h-4 text-slate-400" />
@@ -69,57 +83,25 @@ const PackageCard = ({ pkg }) => {
         </div>
       </div>
 
-      {/* Description */}
       <p className="text-slate-300 mb-4 line-clamp-2">{pkg.description || 'No description available'}</p>
 
-      {/* Install Commands */}
       <div className="mb-6">
-        <Suspense fallback={<div className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-4 text-sm text-slate-400">Loading install examples...</div>}>
+        <Suspense fallback={<div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-400">Loading install examples...</div>}>
           <InstallCommands packageName={pkg.name} />
         </Suspense>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-700/50">
-          <div className="flex items-center gap-2 mb-1">
-            <Users className="w-4 h-4 text-indigo-400" />
-            <span className="text-xs text-slate-400">Downloads</span>
-          </div>
-          <p className="text-lg font-semibold text-slate-200">{formatNumber(pkg.downloads)}</p>
-          <p className="text-xs text-slate-500">/week</p>
-        </div>
-
+        <AnimatedStat value={pkg.downloads} icon={Users} iconColor="text-indigo-400" label="Downloads" suffix="/week" />
         {pkg.github && (
           <>
-            <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-700/50">
-              <div className="flex items-center gap-2 mb-1">
-                <Star className="w-4 h-4 text-amber-400" />
-                <span className="text-xs text-slate-400">Stars</span>
-              </div>
-              <p className="text-lg font-semibold text-slate-200">{formatNumber(pkg.github.stars)}</p>
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-700/50">
-              <div className="flex items-center gap-2 mb-1">
-                <GitFork className="w-4 h-4 text-purple-400" />
-                <span className="text-xs text-slate-400">Forks</span>
-              </div>
-              <p className="text-lg font-semibold text-slate-200">{formatNumber(pkg.github.forks)}</p>
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-700/50">
-              <div className="flex items-center gap-2 mb-1">
-                <AlertCircle className="w-4 h-4 text-red-400" />
-                <span className="text-xs text-slate-400">Issues</span>
-              </div>
-              <p className="text-lg font-semibold text-slate-200">{formatNumber(pkg.github.openIssues)}</p>
-            </div>
+            <AnimatedStat value={pkg.github.stars} icon={Star} iconColor="text-amber-400" label="Stars" />
+            <AnimatedStat value={pkg.github.forks} icon={GitFork} iconColor="text-purple-400" label="Forks" />
+            <AnimatedStat value={pkg.github.openIssues} icon={AlertCircle} iconColor="text-red-400" label="Issues" />
           </>
         )}
       </div>
 
-      {/* Metadata */}
       <div className="flex flex-wrap items-center gap-4 text-sm">
         {pkg.license && (
           <div className="flex items-center gap-2">
@@ -162,19 +144,15 @@ const PackageCard = ({ pkg }) => {
         )}
       </div>
 
-      {/* Keywords */}
       {pkg.keywords && pkg.keywords.length > 0 && (
         <div className="mt-4 flex flex-wrap gap-2">
           {pkg.keywords.slice(0, 8).map((keyword, index) => (
-            <span
-              key={index}
-              className="px-2 py-1 text-xs rounded-md bg-slate-700/50 text-slate-400"
-            >
+            <span key={index} className="px-2 py-1 text-xs rounded-md border border-white/10 bg-white/5 text-slate-400">
               {keyword}
             </span>
           ))}
           {pkg.keywords.length > 8 && (
-            <span className="px-2 py-1 text-xs rounded-md bg-slate-700/50 text-slate-400">
+            <span className="px-2 py-1 text-xs rounded-md border border-white/10 bg-white/5 text-slate-400">
               +{pkg.keywords.length - 8} more
             </span>
           )}

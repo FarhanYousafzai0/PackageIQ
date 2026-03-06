@@ -219,7 +219,7 @@ const HeroSection = ({ loading, searchTerm, setSearchTerm, onSubmit, onQuickSear
           </p>
 
           <form id="search-form" onSubmit={onSubmit} className="mx-auto mt-8 max-w-3xl lg:mx-0">
-            <div className="flex flex-col gap-3 rounded-[1.5rem] border border-white/10 bg-slate-900/75 p-3 shadow-[0_25px_80px_-40px_rgba(14,165,233,0.85)] sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-3 rounded-[1.5rem] border border-white/10 bg-slate-900/75 p-3 breathing-glow sm:flex-row sm:items-center">
               <div className="relative flex-1" ref={wrapperRef}>
                 <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center">
                   <Search className="h-5 w-5 text-slate-500" />

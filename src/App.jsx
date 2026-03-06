@@ -1,10 +1,25 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import './App.css';
 
 const PackageSearch = lazy(() => import('./pages/PackageSearch'));
 const CompareView = lazy(() => import('./pages/CompareView'));
+const CompatibilityChecker = lazy(() => import('./pages/CompatibilityChecker'));
+
+const AnimatedRoutes = () => {
+  const location = useLocation();
+  return (
+    <div key={location.pathname} className="page-enter">
+      <Routes location={location}>
+        <Route path="/" element={<PackageSearch />} />
+        <Route path="/compare" element={<CompareView />} />
+        <Route path="/audit" element={<CompatibilityChecker />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </div>
+  );
+};
 
 function App() {
   return (
@@ -19,12 +34,13 @@ function App() {
           },
         }}
       />
-      <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center">Loading PackageIQ...</div>}>
-        <Routes>
-          <Route path="/" element={<PackageSearch />} />
-          <Route path="/compare" element={<CompareView />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+      <Suspense fallback={
+        <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col items-center justify-center gap-3">
+          <div className="h-10 w-10 rounded-full border-2 border-cyan-400/30 border-t-cyan-400 animate-spin" />
+          <p className="text-sm text-slate-400">Loading PackageIQ...</p>
+        </div>
+      }>
+        <AnimatedRoutes />
       </Suspense>
     </Router>
   );

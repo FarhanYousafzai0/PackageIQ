@@ -73,7 +73,7 @@ const TrustSignals = ({ maintenance, trustSignals }) => {
   }
 
   return (
-    <div className="rounded-[1.75rem] border border-white/10 bg-slate-950/60 p-6 backdrop-blur-xl">
+    <div className="rounded-[1.75rem] border border-white/10 bg-slate-950/60 p-6 backdrop-blur-xl card-hover">
       <div className="mb-5 flex items-center gap-3">
         <BadgeCheck className="h-5 w-5 text-cyan-300" />
         <div>

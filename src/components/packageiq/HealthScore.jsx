@@ -56,7 +56,7 @@ const HealthScore = ({ score }) => {
   const strokeDashoffset = circumference - (animatedScore / 100) * circumference;
 
   return (
-    <div className={`relative p-6 rounded-2xl border ${getScoreBorder(score)} ${getScoreBg(score)} backdrop-blur-sm`}>
+    <div className={`relative p-6 rounded-[1.75rem] border ${getScoreBorder(score)} ${getScoreBg(score)} backdrop-blur-xl card-hover`}>
       <div className="flex items-center gap-3 mb-4">
         {getScoreIcon(score)}
         <h3 className="text-lg font-semibold text-slate-200">Health Score</h3>

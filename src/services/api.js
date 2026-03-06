@@ -625,11 +625,307 @@ export const fetchPackageIntelligence = async (packageName) => {
     alternatives,
   });
 
+  const supplyChain = buildSupplyChainRisk({
+    bundleSize,
+    maintainersCount,
+    maintenance: packageBase.maintenance,
+    trustSignals: packageBase.trustSignals,
+    npmData,
+    latestRelease,
+  });
+
+  const compat = buildFrameworkCompat({ latestRelease, bundleSize, npmData });
+
+  const devExperience = buildDeveloperExperience({
+    npmData,
+    latestRelease,
+    trustSignals: packageBase.trustSignals,
+    bundleSize,
+    githubData,
+  });
+
+  const communityPulse = buildCommunityPulse({
+    githubData,
+    downloads: downloads.downloads,
+    npmData,
+    maintenance: packageBase.maintenance,
+  });
+
+  const sustainability = buildSustainability({
+    maintenance: packageBase.maintenance,
+    githubData,
+    downloads: downloads.downloads,
+    trustSignals: packageBase.trustSignals,
+    npmData,
+  });
+
   return {
     ...packageBase,
     decision,
     alternatives,
+    supplyChain,
+    compat,
+    devExperience,
+    communityPulse,
+    sustainability,
   };
+};
+
+const buildSupplyChainRisk = ({ bundleSize, maintainersCount, maintenance, trustSignals, npmData, latestRelease }) => {
+  const signals = [];
+  let riskScore = 100;
+
+  const depCount = bundleSize?.dependencyCount ?? Object.keys(latestRelease?.dependencies || {}).length;
+  if (depCount > 20) {
+    signals.push({ key: 'heavyDeps', label: 'Heavy dependency tree', detail: `${depCount} transitive dependencies increase attack surface.`, risk: 'high' });
+    riskScore -= 25;
+  } else if (depCount > 8) {
+    signals.push({ key: 'moderateDeps', label: 'Moderate dependency tree', detail: `${depCount} transitive dependencies — manageable but review regularly.`, risk: 'medium' });
+    riskScore -= 10;
+  } else {
+    signals.push({ key: 'leanDeps', label: 'Lean dependency tree', detail: `Only ${depCount} transitive dependencies — low supply-chain exposure.`, risk: 'low' });
+  }
+
+  if (maintainersCount <= 1) {
+    signals.push({ key: 'singleMaintainer', label: 'Single maintainer', detail: 'Bus-factor risk — one person controls publishing.', risk: 'high' });
+    riskScore -= 20;
+  } else if (maintainersCount <= 3) {
+    signals.push({ key: 'smallTeam', label: 'Small maintainer team', detail: `${maintainersCount} maintainers — reasonable coverage.`, risk: 'medium' });
+    riskScore -= 5;
+  } else {
+    signals.push({ key: 'healthyTeam', label: 'Healthy maintainer count', detail: `${maintainersCount} maintainers share publishing responsibility.`, risk: 'low' });
+  }
+
+  if (trustSignals?.licenseRisk === 'review') {
+    signals.push({ key: 'licenseRisk', label: 'License needs review', detail: 'Not in the standard permissive license set.', risk: 'medium' });
+    riskScore -= 10;
+  } else if (trustSignals?.licenseRisk === 'unknown') {
+    signals.push({ key: 'noLicense', label: 'No license declared', detail: 'Missing license makes legal review harder.', risk: 'high' });
+    riskScore -= 15;
+  } else {
+    signals.push({ key: 'safeLicense', label: 'Permissive license', detail: 'Uses a well-known open-source license.', risk: 'low' });
+  }
+
+  if (maintenance?.status === 'stale') {
+    signals.push({ key: 'staleUpdates', label: 'No recent updates', detail: 'No releases or commits in over 6 months — vulnerabilities may go unpatched.', risk: 'high' });
+    riskScore -= 20;
+  } else if (maintenance?.status === 'active') {
+    signals.push({ key: 'activeUpdates', label: 'Actively maintained', detail: 'Regular releases reduce unpatched vulnerability window.', risk: 'low' });
+  }
+
+  if (trustSignals?.archived) {
+    signals.push({ key: 'archived', label: 'Repository archived', detail: 'No further development is expected.', risk: 'high' });
+    riskScore -= 25;
+  }
+
+  riskScore = Math.max(0, Math.min(100, riskScore));
+  const riskLevel = riskScore >= 70 ? 'low' : riskScore >= 40 ? 'medium' : 'high';
+
+  return { riskLevel, score: riskScore, signals };
+};
+
+const buildFrameworkCompat = ({ latestRelease, bundleSize, npmData }) => {
+  const pkg = latestRelease || {};
+  const hasExports = !!pkg.exports;
+  const hasModule = !!pkg.module;
+  const hasMain = !!pkg.main;
+  const hasTypes = !!pkg.types || !!pkg.typings || !!npmData?.types || !!npmData?.typings;
+  const hasBrowser = !!pkg.browser;
+  const isESM = hasExports || hasModule || pkg.type === 'module' || bundleSize?.hasJSModule === true;
+  const isCJS = hasMain || (!isESM && !hasExports);
+  const treeshakeable = isESM && (bundleSize?.hasSideEffects === false || hasExports);
+
+  const peerDeps = Object.entries(pkg.peerDependencies || {}).map(([name, version]) => ({ name, version }));
+  const nodeEngines = pkg.engines?.node || null;
+
+  return { esm: isESM, cjs: isCJS, types: hasTypes, browser: hasBrowser, nodeEngines, treeshakeable, peerDeps };
+};
+
+const buildDeveloperExperience = ({ npmData, latestRelease, trustSignals, bundleSize, githubData }) => {
+  const signals = [];
+  let score = 0;
+
+  const readmeLen = (npmData.readme || '').length;
+  if (readmeLen > 3000) {
+    signals.push({ key: 'docs', label: 'Comprehensive README', detail: 'Detailed documentation helps developers onboard quickly.', positive: true });
+    score += 25;
+  } else if (readmeLen > 500) {
+    signals.push({ key: 'docs', label: 'Basic README', detail: 'README exists but could be more thorough.', positive: true });
+    score += 12;
+  } else {
+    signals.push({ key: 'docs', label: 'Minimal documentation', detail: 'Very short or missing README hurts discoverability.', positive: false });
+  }
+
+  if (trustSignals?.hasTypes) {
+    signals.push({ key: 'types', label: 'TypeScript types included', detail: 'Inline types enable autocompletion and catch errors at compile time.', positive: true });
+    score += 20;
+  } else {
+    signals.push({ key: 'types', label: 'No TypeScript types', detail: 'Missing types means less IDE support and harder integration.', positive: false });
+  }
+
+  if (trustSignals?.hasHomepage) {
+    signals.push({ key: 'homepage', label: 'Documentation site', detail: 'A dedicated docs site shows investment in developer experience.', positive: true });
+    score += 15;
+  } else {
+    signals.push({ key: 'homepage', label: 'No documentation site', detail: 'No dedicated homepage or docs site.', positive: false });
+  }
+
+  if (trustSignals?.hasRepository) {
+    signals.push({ key: 'repo', label: 'Source code available', detail: 'Open repository lets developers inspect code and contribute.', positive: true });
+    score += 10;
+  } else {
+    signals.push({ key: 'repo', label: 'No public repository', detail: 'Source code is not publicly accessible.', positive: false });
+  }
+
+  const keywords = npmData.keywords || [];
+  if (keywords.length >= 3) {
+    signals.push({ key: 'keywords', label: 'Well-tagged package', detail: `${keywords.length} keywords help developers discover this package.`, positive: true });
+    score += 10;
+  } else {
+    signals.push({ key: 'keywords', label: 'Few keywords', detail: 'More keywords would improve npm search discoverability.', positive: false });
+  }
+
+  const depCount = bundleSize?.dependencyCount ?? Object.keys(latestRelease?.dependencies || {}).length;
+  if (depCount <= 3) {
+    signals.push({ key: 'simpleDeps', label: 'Minimal dependencies', detail: 'Few dependencies mean fewer install conflicts and simpler debugging.', positive: true });
+    score += 10;
+  }
+
+  if (githubData?.stars > 1000) {
+    signals.push({ key: 'communityProof', label: 'Community-proven', detail: `${githubData.stars.toLocaleString()} stars demonstrate community trust and examples.`, positive: true });
+    score += 10;
+  }
+
+  score = Math.min(100, Math.max(0, score));
+  const level = score >= 75 ? 'excellent' : score >= 55 ? 'good' : score >= 35 ? 'fair' : 'poor';
+
+  return { score, level, signals };
+};
+
+const buildCommunityPulse = ({ githubData, downloads, npmData, maintenance }) => {
+  const signals = [];
+  const stars = githubData?.stars || 0;
+  const forks = githubData?.forks || 0;
+  const openIssues = githubData?.openIssues || 0;
+
+  if (downloads > 1000000) {
+    signals.push({ key: 'massAdoption', label: 'Mass adoption', detail: `${(downloads / 1e6).toFixed(1)}M weekly downloads — industry standard.`, tone: 'positive' });
+  } else if (downloads > 100000) {
+    signals.push({ key: 'strongAdoption', label: 'Strong adoption', detail: `${(downloads / 1e3).toFixed(0)}K weekly downloads — well-established.`, tone: 'positive' });
+  } else if (downloads > 10000) {
+    signals.push({ key: 'moderateAdoption', label: 'Moderate adoption', detail: `${(downloads / 1e3).toFixed(1)}K weekly downloads.`, tone: 'neutral' });
+  } else {
+    signals.push({ key: 'lowAdoption', label: 'Niche adoption', detail: `${downloads.toLocaleString()} weekly downloads — limited community proof.`, tone: 'warning' });
+  }
+
+  if (stars > 10000) {
+    signals.push({ key: 'highStars', label: 'Highly starred', detail: `${(stars / 1e3).toFixed(1)}K stars signal strong community interest.`, tone: 'positive' });
+  } else if (stars > 1000) {
+    signals.push({ key: 'goodStars', label: 'Good star count', detail: `${(stars / 1e3).toFixed(1)}K GitHub stars.`, tone: 'positive' });
+  } else if (stars > 100) {
+    signals.push({ key: 'someStars', label: 'Growing recognition', detail: `${stars} stars — gaining traction.`, tone: 'neutral' });
+  }
+
+  if (forks > 0 && stars > 0) {
+    const forkRatio = forks / stars;
+    if (forkRatio > 0.3) {
+      signals.push({ key: 'highForks', label: 'Active forking', detail: `High fork-to-star ratio (${(forkRatio * 100).toFixed(0)}%) suggests active contributor base.`, tone: 'positive' });
+    } else if (forkRatio > 0.1) {
+      signals.push({ key: 'normalForks', label: 'Normal fork rate', detail: `Healthy fork-to-star ratio of ${(forkRatio * 100).toFixed(0)}%.`, tone: 'neutral' });
+    }
+  }
+
+  if (stars > 0 && openIssues > 0) {
+    const issueRatio = openIssues / stars;
+    if (issueRatio > 0.1) {
+      signals.push({ key: 'highIssues', label: 'Many open issues', detail: `${openIssues} open issues relative to ${stars} stars may indicate backlog.`, tone: 'warning' });
+    } else {
+      signals.push({ key: 'lowIssues', label: 'Manageable issue load', detail: `${openIssues} open issues — healthy for a ${stars}-star project.`, tone: 'positive' });
+    }
+  }
+
+  if (maintenance?.releaseFrequency === 'high') {
+    signals.push({ key: 'freqReleases', label: 'Frequent releases', detail: 'Active release cadence shows responsive maintenance.', tone: 'positive' });
+  } else if (maintenance?.releaseFrequency === 'low') {
+    signals.push({ key: 'slowReleases', label: 'Infrequent releases', detail: 'Slow release cadence may delay bug fixes.', tone: 'warning' });
+  }
+
+  let healthLevel;
+  const positiveCount = signals.filter((s) => s.tone === 'positive').length;
+  const warningCount = signals.filter((s) => s.tone === 'warning').length;
+  if (positiveCount >= 4) healthLevel = 'thriving';
+  else if (positiveCount >= 2 && warningCount === 0) healthLevel = 'healthy';
+  else if (warningCount >= 2) healthLevel = 'quiet';
+  else healthLevel = 'moderate';
+
+  return { health: healthLevel, signals };
+};
+
+const buildSustainability = ({ maintenance, githubData, downloads, trustSignals, npmData }) => {
+  const signals = [];
+  let confidenceScore = 50;
+
+  if (maintenance?.status === 'active') {
+    signals.push({ key: 'activeMaintenance', label: 'Active maintenance', detail: 'Recent commits or releases show ongoing investment.', tone: 'positive' });
+    confidenceScore += 15;
+  } else if (maintenance?.status === 'slow') {
+    signals.push({ key: 'slowMaintenance', label: 'Slowing maintenance', detail: 'Maintenance cadence has decreased.', tone: 'warning' });
+    confidenceScore -= 5;
+  } else {
+    signals.push({ key: 'staleMaintenance', label: 'Stale maintenance', detail: 'No meaningful activity in over 6 months.', tone: 'warning' });
+    confidenceScore -= 15;
+  }
+
+  if (maintenance?.maintainersCount > 3) {
+    signals.push({ key: 'teamDiversity', label: 'Diverse maintainer team', detail: `${maintenance.maintainersCount} maintainers reduce single-point-of-failure risk.`, tone: 'positive' });
+    confidenceScore += 10;
+  } else if (maintenance?.maintainersCount <= 1) {
+    signals.push({ key: 'soloMaintainer', label: 'Solo maintainer risk', detail: 'A single maintainer creates sustainability risk.', tone: 'warning' });
+    confidenceScore -= 10;
+  }
+
+  if (maintenance?.releaseFrequency === 'high') {
+    signals.push({ key: 'releaseCadence', label: 'Strong release cadence', detail: '8+ releases in last 6 months shows healthy iteration.', tone: 'positive' });
+    confidenceScore += 10;
+  } else if (maintenance?.releaseFrequency === 'medium') {
+    signals.push({ key: 'releaseCadence', label: 'Moderate release cadence', detail: 'Regular but not frequent release pattern.', tone: 'neutral' });
+    confidenceScore += 5;
+  }
+
+  if (downloads > 500000) {
+    signals.push({ key: 'adoptionMomentum', label: 'Strong adoption momentum', detail: 'High download volume creates ecosystem pressure to maintain.', tone: 'positive' });
+    confidenceScore += 10;
+  } else if (downloads < 5000) {
+    signals.push({ key: 'lowAdoption', label: 'Low adoption pressure', detail: 'Low download counts reduce community pressure to maintain.', tone: 'warning' });
+    confidenceScore -= 5;
+  }
+
+  if (githubData) {
+    const ageInDays = daysBetweenNow(githubData.createdAt);
+    if (ageInDays > 365 * 3 && maintenance?.status !== 'stale') {
+      signals.push({ key: 'provenLongevity', label: 'Proven longevity', detail: `${Math.floor(ageInDays / 365)}+ years of active development.`, tone: 'positive' });
+      confidenceScore += 10;
+    } else if (ageInDays < 180) {
+      signals.push({ key: 'newProject', label: 'Young project', detail: 'Less than 6 months old — long-term commitment uncertain.', tone: 'warning' });
+      confidenceScore -= 5;
+    }
+
+    if (githubData.archived) {
+      signals.push({ key: 'archived', label: 'Project archived', detail: 'Repository is archived — no future updates expected.', tone: 'warning' });
+      confidenceScore -= 25;
+    }
+  }
+
+  const hasFunding = !!(npmData?.funding);
+  if (hasFunding) {
+    signals.push({ key: 'funded', label: 'Has funding info', detail: 'Funding signals financial sustainability.', tone: 'positive' });
+    confidenceScore += 5;
+  }
+
+  confidenceScore = Math.max(10, Math.min(95, confidenceScore));
+  const outlook = confidenceScore >= 70 ? 'strong' : confidenceScore >= 45 ? 'moderate' : 'declining';
+
+  return { outlook, confidence: confidenceScore, signals };
 };
 
 /**

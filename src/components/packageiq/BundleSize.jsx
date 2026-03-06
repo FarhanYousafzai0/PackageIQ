@@ -4,7 +4,7 @@ import { Package, Zap, Layers } from 'lucide-react';
 const BundleSizeDisplay = ({ bundleSize }) => {
   if (!bundleSize) {
     return (
-      <div className="p-6 rounded-2xl border border-slate-700/50 bg-slate-800/50 backdrop-blur-sm">
+      <div className="p-6 rounded-[1.75rem] border border-white/10 bg-slate-950/60 backdrop-blur-xl card-hover">
         <div className="flex items-center gap-3 mb-4">
           <Package className="w-5 h-5 text-purple-400" />
           <h3 className="text-lg font-semibold text-slate-200">Bundle Size</h3>
@@ -34,14 +34,14 @@ const BundleSizeDisplay = ({ bundleSize }) => {
   const sizeCategory = getSizeCategory(bundleSize.gzip);
 
   return (
-    <div className="p-6 rounded-2xl border border-slate-700/50 bg-slate-800/50 backdrop-blur-sm">
+    <div className="p-6 rounded-[1.75rem] border border-white/10 bg-slate-950/60 backdrop-blur-xl card-hover">
       <div className="flex items-center gap-3 mb-4">
         <Package className="w-5 h-5 text-purple-400" />
         <h3 className="text-lg font-semibold text-slate-200">Bundle Size</h3>
       </div>
       
       <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+        <div className="p-4 rounded-xl bg-white/5 border border-white/10 card-hover">
           <div className="flex items-center gap-2 mb-2">
             <Package className="w-4 h-4 text-slate-400" />
             <span className="text-sm text-slate-400">Minified</span>
@@ -51,7 +51,7 @@ const BundleSizeDisplay = ({ bundleSize }) => {
           </p>
         </div>
         
-        <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-700/50">
+        <div className="p-4 rounded-xl bg-white/5 border border-white/10 card-hover">
           <div className="flex items-center gap-2 mb-2">
             <Zap className="w-4 h-4 text-slate-400" />
             <span className="text-sm text-slate-400">Gzipped</span>
@@ -62,7 +62,7 @@ const BundleSizeDisplay = ({ bundleSize }) => {
         </div>
       </div>
       
-      <div className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
+      <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
         <div className="flex items-center gap-2">
           <Layers className="w-4 h-4 text-slate-400" />
           <span className="text-sm text-slate-400">Dependencies</span>

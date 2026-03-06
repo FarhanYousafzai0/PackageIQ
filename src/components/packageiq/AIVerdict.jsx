@@ -46,7 +46,7 @@ const AIVerdict = ({ verdict }) => {
   const colors = getOverallColor(verdict.overall);
 
   return (
-    <div className={`p-6 rounded-2xl border ${colors.border} ${colors.bg} backdrop-blur-sm`}>
+    <div className={`p-6 rounded-[1.75rem] border ${colors.border} ${colors.bg} backdrop-blur-xl card-hover`}>
       <div className="flex items-center gap-3 mb-4">
         <Brain className="w-5 h-5 text-indigo-400" />
         <h3 className="text-lg font-semibold text-slate-200">Decision Summary</h3>

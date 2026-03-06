@@ -65,7 +65,7 @@ const DownloadChart = ({ data: initialData, packageName }) => {
 
   if ((!initialData || initialData.length === 0) && (!chartRawData || chartRawData.length === 0)) {
     return (
-      <div className="p-6 rounded-2xl border border-slate-700/50 bg-slate-800/50 backdrop-blur-sm">
+      <div className="p-6 rounded-[1.75rem] border border-white/10 bg-slate-950/60 backdrop-blur-xl card-hover">
         <div className="flex items-center gap-3 mb-4">
           <TrendingUp className="w-5 h-5 text-indigo-400" />
           <h3 className="text-lg font-semibold text-slate-200">Download Trends</h3>
@@ -106,7 +106,7 @@ const DownloadChart = ({ data: initialData, packageName }) => {
   };
 
   return (
-    <div className="p-6 rounded-2xl border border-slate-700/50 bg-slate-800/50 backdrop-blur-sm">
+    <div className="p-6 rounded-[1.75rem] border border-white/10 bg-slate-950/60 backdrop-blur-xl card-hover">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <TrendingUp className="w-5 h-5 text-indigo-400" />
