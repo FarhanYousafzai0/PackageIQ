@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Clipboard, Check, Terminal } from 'lucide-react';
+import { toast } from 'sonner';
 import axios from 'axios';
 
 const InstallCommands = ({ packageName }) => {
   const [activeTab, setActiveTab] = useState('npm');
-  const [copied, setCopied] = useState(false);
-  const [readme, setReadme] = useState('');
   const [codeExample, setCodeExample] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -16,7 +15,6 @@ const InstallCommands = ({ packageName }) => {
     bun: { command: `bun add ${packageName}`, label: 'bun' },
   };
 
-  // Fetch README and extract first code block
   useEffect(() => {
     const fetchReadme = async () => {
       setLoading(true);
@@ -32,48 +30,38 @@ const InstallCommands = ({ packageName }) => {
         }
         
         const readmeContent = response.data.readme || '';
-        setReadme(readmeContent);
-        
-        // Extract first code block from README
         const codeBlockMatch = readmeContent.match(/```(?:\w+)?\n([\s\S]*?)```/);
-        if (codeBlockMatch && codeBlockMatch[1]) {
-          setCodeExample(codeBlockMatch[1].trim());
-        } else {
-          setCodeExample('');
-        }
-      } catch (error) {
-        console.error('Failed to fetch README:', error);
+        setCodeExample(codeBlockMatch?.[1]?.trim() || '');
+      } catch {
         setCodeExample('');
       } finally {
         setLoading(false);
       }
     };
 
-    if (packageName) {
-      fetchReadme();
-    }
+    if (packageName) fetchReadme();
   }, [packageName]);
 
   const handleCopy = async () => {
     const command = packageManagers[activeTab].command;
     try {
       await navigator.clipboard.writeText(command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
+      toast.success('Copied to clipboard!', {
+        description: command,
+        duration: 2000,
+      });
+    } catch {
+      toast.error('Failed to copy command');
     }
   };
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-      {/* Header */}
       <div className="flex items-center gap-2 mb-4">
         <Terminal className="w-5 h-5 text-blue-400" />
         <h3 className="text-lg font-semibold text-slate-200">Install</h3>
       </div>
 
-      {/* Package Manager Tabs */}
       <div className="flex gap-2 mb-4">
         {Object.entries(packageManagers).map(([key, { label }]) => (
           <button
@@ -90,39 +78,23 @@ const InstallCommands = ({ packageName }) => {
         ))}
       </div>
 
-      {/* Command Display with Copy */}
       <div className="flex items-center gap-3 mb-6 p-3 bg-gray-950 rounded-lg border border-gray-800">
         <code className="flex-1 font-mono text-green-400 text-sm overflow-x-auto">
           {packageManagers[activeTab].command}
         </code>
         <button
           onClick={handleCopy}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all ${
-            copied
-              ? 'text-green-400 bg-green-400/10'
-              : 'text-gray-400 hover:text-white hover:bg-gray-800'
-          }`}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-gray-400 hover:text-white hover:bg-gray-800"
         >
-          {copied ? (
-            <>
-              <Check className="w-4 h-4" />
-              <span className="text-sm">Copied!</span>
-            </>
-          ) : (
-            <>
-              <Clipboard className="w-4 h-4" />
-              <span className="text-sm">Copy</span>
-            </>
-          )}
+          <Clipboard className="w-4 h-4" />
+          <span className="text-sm">Copy</span>
         </button>
       </div>
 
-      {/* Quick Usage Example */}
       <div>
         <h4 className="text-sm font-medium text-gray-400 mb-3">Quick Usage Example</h4>
         
         {loading ? (
-          // Loading skeleton
           <div className="bg-gray-950 rounded-lg p-3 border border-gray-800">
             <div className="space-y-2">
               <div className="h-4 bg-gray-800 rounded animate-pulse w-3/4"></div>

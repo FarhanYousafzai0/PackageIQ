@@ -1,12 +1,26 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Activity, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 
 const HealthScore = ({ score }) => {
+  const [animatedScore, setAnimatedScore] = useState(0);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAnimatedScore(score), 100);
+    return () => clearTimeout(timer);
+  }, [score]);
+
   const getScoreColor = (s) => {
     if (s >= 80) return 'text-emerald-400';
     if (s >= 60) return 'text-amber-400';
     if (s >= 40) return 'text-orange-400';
     return 'text-red-400';
+  };
+
+  const getScoreStroke = (s) => {
+    if (s >= 80) return '#34d399';
+    if (s >= 60) return '#fbbf24';
+    if (s >= 40) return '#fb923c';
+    return '#f87171';
   };
 
   const getScoreBg = (s) => {
@@ -37,10 +51,9 @@ const HealthScore = ({ score }) => {
     return 'Poor';
   };
 
-  // Calculate stroke dasharray for circular progress
   const radius = 36;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (score / 100) * circumference;
+  const strokeDashoffset = circumference - (animatedScore / 100) * circumference;
 
   return (
     <div className={`relative p-6 rounded-2xl border ${getScoreBorder(score)} ${getScoreBg(score)} backdrop-blur-sm`}>
@@ -51,7 +64,6 @@ const HealthScore = ({ score }) => {
       
       <div className="flex items-center justify-center">
         <div className="relative">
-          {/* Background circle */}
           <svg className="transform -rotate-90 w-32 h-32">
             <circle
               cx="64"
@@ -62,22 +74,20 @@ const HealthScore = ({ score }) => {
               fill="transparent"
               className="text-slate-700"
             />
-            {/* Progress circle */}
             <circle
               cx="64"
               cy="64"
               r={radius}
-              stroke="currentColor"
+              stroke={getScoreStroke(score)}
               strokeWidth="8"
               fill="transparent"
               strokeDasharray={circumference}
               strokeDashoffset={strokeDashoffset}
               strokeLinecap="round"
-              className={`${getScoreColor(score)} transition-all duration-1000 ease-out`}
+              style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
             />
           </svg>
           
-          {/* Score text */}
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className={`text-3xl font-bold ${getScoreColor(score)}`}>
               {score}

@@ -6,7 +6,6 @@ import HealthScore from '../components/packageiq/HealthScore';
 import BundleSizeDisplay from '../components/packageiq/BundleSize';
 import AIVerdict from '../components/packageiq/AIVerdict';
 import NavigationBar from '../components/packageiq/NavigationBar';
-import PackageNotFoundState from '../components/packageiq/PackageNotFoundState';
 import CompareDecisionSummary from '../components/packageiq/CompareDecisionSummary';
 import TrustSignals from '../components/packageiq/TrustSignals';
 import CompareLauncher from '../components/packageiq/CompareLauncher';
@@ -15,30 +14,21 @@ import { trackCompareView } from '../services/analytics';
 
 const DownloadChart = lazy(() => import('../components/packageiq/DownloadChart'));
 
-const PACKAGE_NOT_FOUND = 'PACKAGE_NOT_FOUND';
-
-const normalizeAppError = (err, fallbackPackageName) => ({
-  code: err?.code || 'PACKAGE_LOOKUP_FAILED',
-  message: err?.message || 'Unable to load package data.',
-  packageName: err?.packageName || fallbackPackageName,
-});
-
 const CompareView = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  const pkg1Name = searchParams.get('pkg1');
+  const pkg2Name = searchParams.get('pkg2');
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pkg1, setPkg1] = useState(null);
   const [pkg2, setPkg2] = useState(null);
   const [verdict1, setVerdict1] = useState(null);
   const [verdict2, setVerdict2] = useState(null);
-  const [pkg1Error, setPkg1Error] = useState(null);
-  const [pkg2Error, setPkg2Error] = useState(null);
   const [packageOneInput, setPackageOneInput] = useState(pkg1Name || '');
   const [packageTwoInput, setPackageTwoInput] = useState(pkg2Name || '');
-
-  const pkg1Name = searchParams.get('pkg1');
-  const pkg2Name = searchParams.get('pkg2');
 
   useEffect(() => {
     setPackageOneInput(pkg1Name || '');
@@ -62,47 +52,26 @@ const CompareView = () => {
       setPkg2(null);
       setVerdict1(null);
       setVerdict2(null);
-      setPkg1Error(null);
-      setPkg2Error(null);
 
       try {
-        const [result1, result2] = await Promise.allSettled([
+        const [data1, data2] = await Promise.all([
           fetchPackageIntelligence(pkg1Name),
           fetchPackageIntelligence(pkg2Name),
         ]);
 
-        if (result1.status === 'fulfilled') {
-          setPkg1(result1.value);
-          setVerdict1(result1.value.decision || generateVerdict(result1.value));
-        } else {
-          const appError = normalizeAppError(result1.reason, pkg1Name);
-          if (appError.code === PACKAGE_NOT_FOUND) {
-            setPkg1Error(appError);
-          } else {
-            throw appError;
-          }
-        }
-
-        if (result2.status === 'fulfilled') {
-          setPkg2(result2.value);
-          setVerdict2(result2.value.decision || generateVerdict(result2.value));
-        } else {
-          const appError = normalizeAppError(result2.reason, pkg2Name);
-          if (appError.code === PACKAGE_NOT_FOUND) {
-            setPkg2Error(appError);
-          } else {
-            throw appError;
-          }
-        }
+        setPkg1(data1);
+        setPkg2(data2);
+        setVerdict1(data1.decision || generateVerdict(data1));
+        setVerdict2(data2.decision || generateVerdict(data2));
       } catch (err) {
-        setError(normalizeAppError(err));
+        setError(err.message || 'Unable to load package data.');
       } finally {
         setLoading(false);
       }
     };
 
     fetchBothPackages();
-  }, [pkg1Name, pkg2Name, navigate]);
+  }, [pkg1Name, pkg2Name]);
 
   const handleCompareSubmit = (e) => {
     e.preventDefault();
@@ -133,23 +102,18 @@ const CompareView = () => {
     let score1 = 0;
     let score2 = 0;
 
-    // Downloads
     if (pkg1.downloads > pkg2.downloads) score1++;
     else if (pkg2.downloads > pkg1.downloads) score2++;
 
-    // Health score
     if (pkg1.healthScore > pkg2.healthScore) score1++;
     else if (pkg2.healthScore > pkg1.healthScore) score2++;
 
-    // GitHub stars
     if (pkg1.github?.stars > pkg2.github?.stars) score1++;
     else if (pkg2.github?.stars > pkg1.github?.stars) score2++;
 
-    // Bundle size (smaller is better)
     if (pkg1.bundleSize?.gzip < pkg2.bundleSize?.gzip) score1++;
     else if (pkg2.bundleSize?.gzip < pkg1.bundleSize?.gzip) score2++;
 
-    // Open issues (fewer is better)
     if (pkg1.github?.openIssues < pkg2.github?.openIssues) score1++;
     else if (pkg2.github?.openIssues < pkg1.github?.openIssues) score2++;
 
@@ -199,7 +163,7 @@ const CompareView = () => {
           <div className="flex items-center justify-center px-4 py-24">
             <div className="text-center max-w-md">
               <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 mb-4">
-                {error.message}
+                {error}
               </div>
               <button
                 onClick={() => navigate('/')}
@@ -216,7 +180,6 @@ const CompareView = () => {
   }
 
   const winner = getWinner();
-  const showCompareEmptyState = !pkg1 && !pkg2 && pkg1Error?.code === PACKAGE_NOT_FOUND && pkg2Error?.code === PACKAGE_NOT_FOUND;
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,_#020617_0%,_#0f172a_36%,_#020617_100%)]">
@@ -232,7 +195,6 @@ const CompareView = () => {
           title="Package comparison"
         />
 
-        {/* Winner Banner */}
         {!pkg1Name || !pkg2Name ? (
           <div className="mt-8 rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-8 text-center backdrop-blur-xl">
             <p className="text-xs uppercase tracking-[0.28em] text-cyan-300/70">Start here</p>
@@ -256,20 +218,13 @@ const CompareView = () => {
           </div>
         )}
 
-        {showCompareEmptyState ? (
-          <PackageNotFoundState
-            packageName={`${pkg1Error.packageName} and ${pkg2Error.packageName}`}
-            context="compare"
-          />
-        ) : (
-        <>
         {pkg1 && pkg2 && (
           <div className="mb-8">
             <CompareDecisionSummary pkg1={pkg1} pkg2={pkg2} verdict1={verdict1} verdict2={verdict2} />
           </div>
         )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Package 1 */}
           {pkg1 && (
             <div className="space-y-6">
               <div className="p-6 rounded-2xl border border-indigo-500/30 bg-indigo-500/5 backdrop-blur-sm">
@@ -278,7 +233,6 @@ const CompareView = () => {
                 <p className="text-slate-300 mt-3">{pkg1.description}</p>
               </div>
 
-              {/* Quick Stats */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
                   <p className="text-sm text-slate-400 mb-1">Downloads</p>
@@ -294,13 +248,13 @@ const CompareView = () => {
                 </div>
                 <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
                   <p className="text-sm text-slate-400 mb-1">GitHub Stars</p>
-                  <p className={`text-xl font-semibold ${getComparisonColor(pkg1.github?.stars || 0, pkg2.github?.stars || 0)}`}>
+                  <p className={`text-xl font-semibold ${getComparisonColor(pkg1.github?.stars || 0, pkg2?.github?.stars || 0)}`}>
                     {formatNumber(pkg1.github?.stars || 0)}
                   </p>
                 </div>
                 <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
                   <p className="text-sm text-slate-400 mb-1">Bundle (gzip)</p>
-                  <p className={`text-xl font-semibold ${getComparisonColor(pkg1.bundleSize?.gzip || 0, pkg2.bundleSize?.gzip || 0, false)}`}>
+                  <p className={`text-xl font-semibold ${getComparisonColor(pkg1.bundleSize?.gzip || 0, pkg2?.bundleSize?.gzip || 0, false)}`}>
                     {pkg1.bundleSize ? formatBytes(pkg1.bundleSize.gzip) : 'N/A'}
                   </p>
                 </div>
@@ -321,11 +275,6 @@ const CompareView = () => {
             </div>
           )}
 
-          {pkg1Error?.code === PACKAGE_NOT_FOUND && (
-            <PackageNotFoundState packageName={pkg1Error.packageName} context="compare" />
-          )}
-
-          {/* Package 2 */}
           {pkg2 && (
             <div className="space-y-6">
               <div className="p-6 rounded-2xl border border-pink-500/30 bg-pink-500/5 backdrop-blur-sm">
@@ -334,7 +283,6 @@ const CompareView = () => {
                 <p className="text-slate-300 mt-3">{pkg2.description}</p>
               </div>
 
-              {/* Quick Stats */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
                   <p className="text-sm text-slate-400 mb-1">Downloads</p>
@@ -350,13 +298,13 @@ const CompareView = () => {
                 </div>
                 <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
                   <p className="text-sm text-slate-400 mb-1">GitHub Stars</p>
-                  <p className={`text-xl font-semibold ${getComparisonColor(pkg2.github?.stars || 0, pkg1.github?.stars || 0)}`}>
+                  <p className={`text-xl font-semibold ${getComparisonColor(pkg2.github?.stars || 0, pkg1?.github?.stars || 0)}`}>
                     {formatNumber(pkg2.github?.stars || 0)}
                   </p>
                 </div>
                 <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
                   <p className="text-sm text-slate-400 mb-1">Bundle (gzip)</p>
-                  <p className={`text-xl font-semibold ${getComparisonColor(pkg2.bundleSize?.gzip || 0, pkg1.bundleSize?.gzip || 0, false)}`}>
+                  <p className={`text-xl font-semibold ${getComparisonColor(pkg2.bundleSize?.gzip || 0, pkg1?.bundleSize?.gzip || 0, false)}`}>
                     {pkg2.bundleSize ? formatBytes(pkg2.bundleSize.gzip) : 'N/A'}
                   </p>
                 </div>
@@ -376,19 +324,12 @@ const CompareView = () => {
               />
             </div>
           )}
-
-          {pkg2Error?.code === PACKAGE_NOT_FOUND && (
-            <PackageNotFoundState packageName={pkg2Error.packageName} context="compare" />
-          )}
         </div>
-        </>
-        )}
       </div>
     </div>
   );
 };
 
-// Helper function
 const formatBytes = (bytes) => {
   if (bytes === 0) return '0 B';
   const k = 1024;
